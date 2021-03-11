@@ -1,0 +1,62 @@
+view: rolling_mau {
+
+  derived_table: {
+    datagroup_trigger: app_usage_datagroup
+    distribution_style: even
+    sortkeys: ["week_start"]
+    sql:
+      WITH weeks AS (
+        SELECT DISTINCT DATE_TRUNC('week', CURRENT_DATE - INTERVAL '3 years' + d) AS week_start
+        FROM
+            (SELECT ROW_NUMBER() OVER(ORDER BY first_seen ) -1 AS d FROM der.sp_users ORDER BY first_seen LIMIT 20000) AS d
+        WHERE week_start BETWEEN CURRENT_DATE - INTERVAL '3 years' AND DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '7 days'
+      ),
+
+      -- using only the last session of each user per time window to avoid double counting of users
+      -- that for example appeared in multiple countries.
+      cartesian_sesions AS (
+        SELECT
+          week_start,
+          platform,
+          life_stage,
+          country,
+          ROW_NUMBER() OVER(PARTITION BY week_start, master_id ORDER BY start DESC)
+        FROM der.sp_sessions
+        JOIN weeks
+          ON sp_sessions.start BETWEEN weeks.week_start - INTERVAL '28 days' AND weeks.week_start
+        WHERE
+          sp_sessions.start BETWEEN CURRENT_DATE - INTERVAL '3 years' AND DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '7 days'
+      )
+
+      SELECT  week_start, platform, life_stage, country, COUNT(1) AS user_count
+      FROM cartesian_sesions
+      WHERE row_number = 1
+      GROUP BY week_start, platform, life_stage, country;;
+  }
+
+  filter: session_time {
+    type: date
+  }
+
+  dimension_group: activity {
+    type: time
+    timeframes: [
+      raw,
+      week,
+      month,
+      quarter,
+      year
+    ]
+    sql: ${TABLE}.week_start ;;
+  }
+
+  dimension: platform {}
+
+  dimension: life_stage {}
+
+  dimension: country {}
+
+  measure: user_count {
+    type: sum
+  }
+}
