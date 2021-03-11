@@ -1,0 +1,21 @@
+connection: "update_connection"
+
+include: "/views/*.view.lkml"                # include all views in the views/ folder in this projects
+include: "/views/app_usage/*.view.lkml"
+# include: "//redshift_block/*.view.lkml"
+# include: "/dashboards/*.dashboard"
+# include: "//redshift_block/*.model"
+
+datagroup: app_usage_datagroup {
+  sql_trigger: SELECT MAX(start)::DATE FROM der.sp_sessions ;;
+  max_cache_age: "24 hours"
+}
+
+persist_with: app_usage_datagroup
+
+
+explore: rolling_mau {
+  always_filter: {
+    filters: [rolling_mau.session_time: "last 26 weeks"]
+  }
+}
